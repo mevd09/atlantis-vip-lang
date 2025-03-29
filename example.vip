@@ -1,0 +1,2 @@
+interface MyInterface "My Interface Title" alwaysOnTop;
+end. 

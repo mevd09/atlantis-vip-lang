@@ -1,0 +1,16 @@
+{
+    "projectName": "AtlantisVip",
+    "languages": [{
+        "id": "atlantis-vip",
+        "caseInsensitive": true,
+        "grammar": "src/language/atlantis-vip.langium",
+        "fileExtensions": [".vip", ".vpp"],
+        "textMate": {
+            "out": "syntaxes/atlantis-vip.tmLanguage.json"
+        },
+        "monarch": {
+            "out": "src/syntaxes/atlantis-vip.monarch.ts"
+        }
+    }],
+    "out": "src/language/generated"
+}
