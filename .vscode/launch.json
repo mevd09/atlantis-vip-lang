@@ -6,6 +6,19 @@
     "version": "0.2.0",
     "configurations": [
         {
+            "name": "cli ast",
+            "program": "${workspaceFolder}/bin/cli.js",
+            "request": "launch",
+            "args": [
+                "ast",
+                "c:\\Users\\Mi\\test.vip"
+            ],
+            "skipFiles": [
+                "<node_internals>/**"
+            ],
+            "type": "node"
+        },
+        {
             "name": "Run Extension",
             "type": "extensionHost",
             "request": "launch",

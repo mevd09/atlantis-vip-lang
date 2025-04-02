@@ -83,7 +83,7 @@ RefType:
     type=[TypeDeclaration];
 
 VariablesDeclaration:
-    names+=Variable (',' names+=Variable)* ':' type=Type;
+    names+=Variable (',' names+=Variable)* ':' type=Type ';';
 
 Variable:
     name=ID;

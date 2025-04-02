@@ -2,6 +2,7 @@ import { type Module, inject } from 'langium';
 import { createDefaultModule, createDefaultSharedModule, type DefaultSharedModuleContext, type LangiumServices, type LangiumSharedServices, type PartialLangiumServices } from 'langium/lsp';
 import { AtlantisVipGeneratedModule, AtlantisVipGeneratedSharedModule } from './generated/module.js';
 import { AtlantisVipValidator, registerValidationChecks } from './atlantis-vip-validator.js';
+import { AtlantisVipScopeProvider } from './atlantis-vip-scope.js';
 
 /**
  * Declaration of custom services - add your own service classes here.
@@ -26,6 +27,9 @@ export type AtlantisVipServices = LangiumServices & AtlantisVipAddedServices
 export const AtlantisVipModule: Module<AtlantisVipServices, PartialLangiumServices & AtlantisVipAddedServices> = {
     validation: {
         AtlantisVipValidator: () => new AtlantisVipValidator()
+    },
+    references: {
+        ScopeProvider: (services) => new AtlantisVipScopeProvider(services)
     }
 };
 

@@ -3,7 +3,7 @@ import { EmptyFileSystem, type LangiumDocument } from "langium";
 import { expandToString as s } from "langium/generate";
 import { clearDocuments, parseHelper } from "langium/test";
 import { createAtlantisVipServices } from "../../src/language/atlantis-vip-module.js";
-import { Model, isModel } from "../../src/language/generated/ast.js";
+import { Model, isModel, NamedField, isNamedField, Ref, isRef } from "../../src/language/generated/ast.js";
 
 let services: ReturnType<typeof createAtlantisVipServices>;
 let parse:    ReturnType<typeof parseHelper<Model>>;
@@ -22,23 +22,60 @@ afterEach(async () => {
 });
 
 describe('Linking tests', () => {
-
-    test('linking of greetings', async () => {
+    test('variable reference linking', async () => {
         document = await parse(`
-            person Langium
-            Hello Langium!
+            interface TestInterface;
+                create view TestView
+                    var x: integer;
+                    as select (x) (fieldname = asdf)
+                ;
+            end.
+        `);
+
+        const field = document.parseResult.value.interfaces[0].views[0].fields[0] as NamedField;
+        const expression = field.expression;
+        expect(
+            checkDocumentValid(document) ||
+            (isRef(expression) ? expression.ref.$refText : 'not a ref')
+        ).toBe('x');
+    });
+
+    test('view reference linking', async () => {
+        document = await parse(`
+            interface TestInterface;
+                create view MainView
+                    var x: integer;
+                    as select (x) (fieldname = x);
+                ;
+                create view ChildView
+                    var y: integer;
+                    as select (y) (fieldname = y);
+                ;
+            end.
         `);
 
         expect(
-            // here we first check for validity of the parsed document object by means of the reusable function
-            //  'checkDocumentValid()' to sort out (critical) typos first,
-            // and then evaluate the cross references we're interested in by checking
-            //  the referenced AST element as well as for a potential error message;
-            checkDocumentValid(document)
-                || document.parseResult.value.greetings.map(g => g.person.ref?.name || g.person.error?.message).join('\n')
-        ).toBe(s`
-            Langium
+            checkDocumentValid(document) ||
+            document.parseResult.value.interfaces[0].views.map(v => v.name).join(', ')
+        ).toBe('MainView, ChildView');
+    });
+
+    test('field reference linking', async () => {
+        document = await parse(`
+            interface TestInterface;
+                create view TestView
+                    var x: integer;
+                    as select (x) (fieldname = x), (x * 2) (fieldname = y);
+                ;
+            end.
         `);
+
+        expect(
+            checkDocumentValid(document) ||
+            document.parseResult.value.interfaces[0].views[0].fields.map(f => 
+                isNamedField(f) ? f.name.name : 'unnamed'
+            ).join(', ')
+        ).toBe('x, y');
     });
 });
 
