@@ -21,7 +21,7 @@ View:
     ';'
     ;
 Field: NamedField|TableField|UnnamedField;
-NamedField: expression=Expression '(' 'fieldname' '=' name=Variable ')';
+NamedField: expression=Expression '(' 'fieldname' '=' name=ID ')';
 TableField: table=ID '.' name=ID;
 UnnamedField: expression=Expression;
 
@@ -45,7 +45,7 @@ PrimaryExpression infers Expression:
     {infer NumberLiteral} value=(INT | HEX | BINARY | FLOAT) |
     {infer StringLiteral} value=STRING |
     {infer BooleanLiteral} value=('true' | 'false') |
-    {infer Ref} ref=[Variable];
+    {infer Ref} ref=[Ref:ID];
 
 Type:
     IntType | FloatType | StringType | BooleanType | DateType | TimeType | DateTimeType | ArrayType | RefType;
@@ -58,29 +58,29 @@ RecordTypeDeclaration:
     'type' name=ID '=' 'record' fields+=RecordField (fields+=RecordField)* 'end'';';
 
 RecordField:
-    names+=ID (',' names+=ID)* ':' type=Type ';';
+    names+=Variable (',' names+=Variable)* ':' type=Type ';';
 
 UserTypeDeclaration:
     'type' name=ID '=' type=Type ';';
 
 IntType:
-    name='byte'|name='word'|name='integer'|name='longint'|name='comp';
+    (component=ID?'::')? name='byte'|name='word'|name='integer'|name='longint'|name='comp';
 FloatType:
-    name='double' | name='single' | name='decimal' ( '[' precision=INT (',' scale=INT)? ']' )?;
+    (component=ID?'::')? name='double' | name='single' | name='decimal' ( '[' precision=INT (',' scale=INT)? ']' )?;
 StringType:
-    name='string'('['length=INT']')?;
+    (component=ID?'::')? name='string'('['length=INT']')?;
 BooleanType:
-    name='boolean';
+    (component=ID?'::')? name='boolean';
 DateType:
-    name='date';
+    (component=ID?'::')? name='date';
 TimeType:
-    name='time';
+    (component=ID?'::')? name='time';
 DateTimeType:
-    name='_datetime';
+    (component=ID?'::')? name='_datetime';
 ArrayType:
-    name='array' '['(leftBound=INT '..')? rightBound=INT']' 'of' type=[Type];
+    name='array' '['(leftBound=INT '..')? rightBound=INT']' 'of' (component=ID?'::')? type=[Type];
 RefType:
-    type=[TypeDeclaration];
+    (component=ID?'::')? type=[TypeDeclaration];
 
 VariablesDeclaration:
     names+=Variable (',' names+=Variable)* ':' type=Type ';';

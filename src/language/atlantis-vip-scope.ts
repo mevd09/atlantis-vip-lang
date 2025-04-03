@@ -51,8 +51,8 @@ export class AtlantisVipScopeProvider implements ScopeProvider {
             view.fields?.forEach(field => {
                 if (field.$type === 'NamedField') {
                     const namedField = field as NamedField;
-                    const description = this.astNodeDescriptionProvider.createDescription(namedField, namedField.name.name);
-                    variables.set(namedField.name.name, description);
+                    const description = this.astNodeDescriptionProvider.createDescription(namedField, namedField.name);
+                    variables.set(namedField.name, description);
                 }
             });
         });
@@ -97,11 +97,11 @@ export class AtlantisVipScopeProvider implements ScopeProvider {
                 view.fields?.forEach(field => {
                     if (field.$type === 'NamedField' && field.$document) {
                         const namedField = field as NamedField;
-                        fields.set(namedField.name.name, {
+                        fields.set(namedField.name, {
                             type: field.$type,
-                            name: namedField.name.name,
+                            name: namedField.name,
                             documentUri: field.$document.uri,
-                            path: field.$cstNode?.text ?? namedField.name.name
+                            path: field.$cstNode?.text ?? namedField.name
                         });
                     }
                 });
