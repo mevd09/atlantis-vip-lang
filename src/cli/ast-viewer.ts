@@ -34,7 +34,7 @@ function prettyPrintAst(node: AstNode | undefined): any {
         for (const [key, value] of Object.entries(node)) {
             // Skip Langium internal properties and references
             if (key.startsWith('$') ) continue;
-            if ((node.$type === 'RefType' || node.$type === 'Ref') && value.$refText) {
+            if (node.$type.includes('Ref') && value.$refText) {
                 result[key] = value.$refText;
             } else if (Array.isArray(value)) {
                 result[key] = value.map(item => {
