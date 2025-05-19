@@ -2,10 +2,21 @@ grammar AtlantisVip
 
 entry Model:
     (
-        interfaces+=Interface
+        interfaces+=Interface|
+        types+=Type|
+        statements+=Statement
     )*;
 
-NamedElement: NamedField | Variable;
+Statement:
+    VarDeclaration | ExpressionStatement;
+
+VarDeclaration:
+    'var' varsOfTypes+=VarsOfType ';' (varsOfTypes+=VarsOfType ';')*;
+
+ExpressionStatement:
+    expression=Expression ';'?;
+
+NamedElement: View | NamedViewField | Variable | Type;
 
 Interface:
     'interface' name=ID title=STRING? WindowAttributes (',' isCacheable?='cacheable')? ';'
@@ -13,82 +24,116 @@ Interface:
     coordinates=Coordinates?
     (
         views+=View |
-        types+=TypeDeclaration
+        types+=Type |
+        declarations+=VarDeclaration
     )*
     'end.';
+
+// Variable Declarations
+VarsOfType:
+    vars+=Variable (',' vars+=Variable)* ':' type=TypeReference;
+
+Variable:
+    name=ID;
+
 View:
     'create'? 'view' name=ID?
-    ('var' vars+=VariablesDeclaration ('var'? vars+=VariablesDeclaration)*)?
-    ('as'? 'select' fields+=Field (',' fields+=Field)*)?
+    (declarations+=VarDeclaration)*
+    ('as'? 'select' fields+=ViewField (',' fields+=ViewField)*)?
     ';'
     ;
-Field: NamedField|UnnamedField;
-NamedField: expression=Expression '(' 'fieldname' '=' name=ID ')';
-UnnamedField: expression=Expression;
 
+ViewField: 
+    NamedViewField | UnnamedViewField;
+
+NamedViewField:
+    expression=Expression '(' 'fieldname' '=' name=ID ')';
+
+UnnamedViewField:
+    expression=Expression;
+
+// Expression Hierarchy
 Expression:
-    Addition;
+    LogicalOr;
+
+LogicalOr infers Expression:
+    LogicalAnd ({infer BinaryExpression.left=current} operator='or' right=LogicalAnd)*;
+
+LogicalAnd infers Expression:
+    Equality ({infer BinaryExpression.left=current} operator='and' right=Equality)*;
+
+Equality infers Expression:
+    Comparison ({infer BinaryExpression.left=current} operator=('=' | '!=' | '<>') right=Comparison)*;
+
+Comparison infers Expression:
+    Addition ({infer BinaryExpression.left=current} operator=('>' | '<' | '>=' | '<=') right=Addition)*;
 
 Addition infers Expression:
     Multiplication ({infer BinaryExpression.left=current} operator=('+' | '-') right=Multiplication)*;
 
 Multiplication infers Expression:
-    Exponentiation ({infer BinaryExpression.left=current} operator=('*' | '/' | 'div') right=Exponentiation)*;
+    MemberCall ({infer BinaryExpression.left=current} operator=('*' | '/' | 'div' | 'mod') right=MemberCall)*;
 
-Exponentiation infers Expression:
-    Modulo ({infer BinaryExpression.left=current} operator='^' right=Modulo)*;
-
-Modulo infers Expression:
-    PrimaryExpression ({infer BinaryExpression.left=current} operator='mod' right=PrimaryExpression)*;
+MemberCall infers Expression: 
+    PrimaryExpression 
+    (
+        {infer MemberCall.previous=current} 
+        (
+            "." element=[NamedElement:ID] (explicitOperationCall?='('(arguments+=Expression (',' arguments+=Expression)*)?')')? 
+        |   (explicitOperationCall?='('(arguments+=Expression (',' arguments+=Expression)*)?')')
+        )
+    )*;
 
 PrimaryExpression infers Expression:
     '(' Expression ')' |
-    {infer NumberLiteral} value=(INT | HEX | BINARY | FLOAT) |
+    UnaryExpression |
+    {infer NumberLiteral} value=( HEX | BINARY | FLOAT | INT) | // Literals
     {infer StringLiteral} value=STRING |
     {infer BooleanLiteral} value=('true' | 'false') |
-    {infer Ref} ref=[NamedElement:ID];
+    FeatureCall;
 
+UnaryExpression:
+    operator=('not' | '-' | '+') value=Expression;
+
+FeatureCall infers Expression:
+	{infer MemberCall}
+	(element=[NamedElement:ID] | element=[NamedElement:'self'])
+    (explicitOperationCall?='('	( arguments+=Expression (',' arguments+=Expression)* )? ')')?;
+
+// Type System Definitions
 Type:
-    IntType | FloatType | StringType | BooleanType | DateType | TimeType | DateTimeType | ArrayType | RefType;
+    Record  | 
+    UserType;
 
-TypeDeclaration:
-    RecordTypeDeclaration | 
-    UserTypeDeclaration;
+Record:
+    'type' name=ID '=' 'record' 
+    fieldsOfTypes+=RecordFieldsOfType (',' fieldsOfTypes+=RecordFieldsOfType)* 'end'';';
 
-RecordTypeDeclaration:
-    'type' name=ID '=' 'record' fields+=RecordField (fields+=RecordField)* 'end'';';
+RecordFieldsOfType:
+    fields+=RecordField (',' fields+=RecordField)* ':' type=TypeReference;
 
-RecordField:
-    names+=Variable (',' names+=Variable)* ':' type=Type ';';
-
-UserTypeDeclaration:
-    'type' name=ID '=' type=Type ';';
-
-IntType:
-    (component=ID?'::')? name='byte'|name='word'|name='integer'|name='longint'|name='comp';
-FloatType:
-    (component=ID?'::')? name='double' | name='single' | name='decimal' ( '[' precision=INT (',' scale=INT)? ']' )?;
-StringType:
-    (component=ID?'::')? name='string'('['length=INT']')?;
-BooleanType:
-    (component=ID?'::')? name='boolean';
-DateType:
-    (component=ID?'::')? name='date';
-TimeType:
-    (component=ID?'::')? name='time';
-DateTimeType:
-    (component=ID?'::')? name='_datetime';
-ArrayType:
-    name='array' '['(leftBound=INT '..')? rightBound=INT']' 'of' (component=ID?'::')? type=[Type];
-RefType:
-    (component=ID?'::')? type=[TypeDeclaration];
-
-VariablesDeclaration:
-    names+=Variable (',' names+=Variable)* ':' type=Type ';';
-
-Variable:
+RecordField: 
     name=ID;
 
+UserType:
+    'type' name=ID '=' type=TypeReference ';';
+
+TypeReference:
+    (component=ID?'::')?
+    (
+        reference=[Type:ID]
+    |   {infer IntType} name=('byte'|'word'|'integer'|'longint'|'comp')
+    |   {infer FloatType} name=('double'|'single'|'decimal')('[' precision=INT (',' scale=INT)? ']')?
+    |   {infer StringType} name='string' ('['length=INT']')?
+    |   {infer BooleanType} name='boolean'
+    |   {infer DateType} name='date'
+    |   {infer TimeType} name='time'
+    |   {infer DateTimeType} name='_datetime'
+    |   {infer ArrayType} name='array' '['(leftBound=INT '..')? rightBound=INT']' 'of' arrayType=TypeReference
+    )
+    ;
+
+// Other Definitions
 Coordinates:
     ('show' 'at'? '('left=INT? ',' top=INT? ',' right=INT? ',' bottom=INT? ')' (isFixedX?='fixed_x')? (isFixedY?='fixed_y')?';') |
     ('bounds' '('left=INT? ',' top=INT? ',' right=INT? ',' bottom=INT? ')' ';')
@@ -107,20 +152,18 @@ fragment WindowAttributes:
     (','? isRightToolbar?='rightToolbar') &
     (','? isTopToolbar?='topToolbar') &
     (','? isDownToolbar?='downToolbar') &
-    (','? isIcon?='icon' (ID | 'defaultAppIconName')) &
+    (','? 'icon' icon=(ID | 'defaultAppIconName')) &
     (','? color=('blue'|'cyan'|'gray')) &
     (','? isCustomSorting?='customSorting');
 
-QualifiedName returns string:
-    (ID'::')? ID ('.' ID)*;
+// Terminals
+terminal STRING returns string: /"(\\.|[^"\\])*"|'(\\.|[^\'\\])*'/;
+terminal HEX returns number: /[0-9]+[0-9a-fA-F]*[hH]/;
+terminal BINARY returns number: /[01]+[bB]/;
+terminal FLOAT returns number: /[0-9]+\.[0-9]+([Ee][\+\-]?[0-9]+)?/;
+terminal INT returns number: /[0-9]+/;
+terminal ID: /[_a-zA-Z][\w_]*/;
 
 hidden terminal WS: /\s+/;
-terminal ID: /[_a-zA-Z][\w_]*/;
-terminal INT returns number: /[0-9]+/;
-terminal STRING returns string: /"(\\.|[^"\\])*"|'(\\.|[^'\\])*'/;
-terminal HEX returns number: /(\d|[a-fA-F])+h/;
-terminal BINARY returns number: /[01]+b/;
-terminal FLOAT returns number: /[0-9]+(\.[0-9]+)?([Ee][\+\-]?[0-9]+)?/;
-
 hidden terminal ML_COMMENT: /\/\*[\s\S]*?\*\//;
 hidden terminal SL_COMMENT: /\/\/[^\n\r]*/;

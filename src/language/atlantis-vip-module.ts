@@ -1,7 +1,7 @@
 import { type Module, inject } from 'langium';
 import { createDefaultModule, createDefaultSharedModule, type DefaultSharedModuleContext, type LangiumServices, type LangiumSharedServices, type PartialLangiumServices } from 'langium/lsp';
 import { AtlantisVipGeneratedModule, AtlantisVipGeneratedSharedModule } from './generated/module.js';
-import { AtlantisVipValidator, registerValidationChecks } from './atlantis-vip-validator.js';
+import { AtlantisVipValidator, AtlantisVipValidationRegistry } from './atlantis-vip-validator.js';
 import { AtlantisVipScopeProvider } from './atlantis-vip-scope.js';
 
 /**
@@ -26,7 +26,8 @@ export type AtlantisVipServices = LangiumServices & AtlantisVipAddedServices
  */
 export const AtlantisVipModule: Module<AtlantisVipServices, PartialLangiumServices & AtlantisVipAddedServices> = {
     validation: {
-        AtlantisVipValidator: () => new AtlantisVipValidator()
+        AtlantisVipValidator: () => new AtlantisVipValidator(),
+        ValidationRegistry: (services) => new AtlantisVipValidationRegistry(services)
     },
     references: {
         ScopeProvider: (services) => new AtlantisVipScopeProvider(services)
@@ -62,7 +63,6 @@ export function createAtlantisVipServices(context: DefaultSharedModuleContext): 
         AtlantisVipModule
     );
     shared.ServiceRegistry.register(AtlantisVip);
-    registerValidationChecks(AtlantisVip);
     if (!context.connection) {
         // We don't run inside a language server
         // Therefore, initialize the configuration provider instantly

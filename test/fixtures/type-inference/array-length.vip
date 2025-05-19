@@ -1,0 +1,4 @@
+interface a;
+type NumberArray = array[1..10] of number;
+var arr: NumberArray; 
+end.

@@ -1,0 +1,7 @@
+type Person = record
+    name: string,
+    age: integer
+end;
+
+var person: Person;
+person.invalid 

@@ -1,7 +1,13 @@
 import { AstNode, Scope, ScopeProvider, ReferenceInfo, AstNodeDescription, LangiumCoreServices, AstNodeDescriptionProvider, AstUtils, MapScope } from 'langium';
-import { isNamedField, isRef } from './generated/ast.js';
+import { 
+    isNamedViewField, 
+    isInterface, 
+    VarsOfType,
+    Variable,
+    NamedViewField,
+    VarDeclaration
+} from './generated/ast.js';
 import { stream } from 'langium';
-import { isInterface } from './generated/ast.js';
 
 export class AtlantisVipScopeProvider implements ScopeProvider {
 
@@ -17,8 +23,8 @@ export class AtlantisVipScopeProvider implements ScopeProvider {
 
     public getScope(context: ReferenceInfo): Scope {
         
-        if (isRef(context.container)) {
-            return this.getRefScope(context.container);
+        if (context.property === 'element') {
+             return this.getRefScope(context.container);
         }
 
         return new MapScope(stream<AstNodeDescription>());
@@ -28,16 +34,21 @@ export class AtlantisVipScopeProvider implements ScopeProvider {
         const references: AstNodeDescription[] = [];
         
         const interface_ = AstUtils.getContainerOfType(node, isInterface)!;
+        if (!interface_) {
+            return new MapScope(references);
+        }
 
         interface_.views.forEach(view => {
-            view.vars.forEach(varsDecl => {
-                varsDecl.names.forEach(variable => {
-                    const description = this.astNodeDescriptionProvider.createDescription(variable, variable.name);
-                    references.push(description);
+            view.declarations?.forEach((declaration: VarDeclaration) => {
+                declaration.varsOfTypes?.forEach((varsOfType: VarsOfType) => {
+                    varsOfType.vars.forEach((variable: Variable) => {
+                        const description = this.astNodeDescriptionProvider.createDescription(variable, variable.name);
+                        references.push(description);
+                    });
                 });
             });
-            view.fields?.filter(isNamedField)
-                .forEach(namedField => {
+            view.fields?.filter(isNamedViewField)
+                .forEach((namedField: NamedViewField) => {
                     const description = this.astNodeDescriptionProvider.createDescription(namedField, namedField.name);
                     references.push(description);
                 });
