@@ -4,6 +4,8 @@ type Person = record
     age: integer;
 end;
 
-var invalid: Person;
-invalid.nonexistent;
+type Employee = Person;
+
+var emp: Employee;
+emp.name
 end. 

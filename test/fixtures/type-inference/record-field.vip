@@ -1,10 +1,8 @@
-type Person = record
-    name: string,
-    age: integer
+p.name
+
+type person = record
+    name: string;
+    age: integer;
 end;
 
-var person: Person;
-
-interface a;
-person.name 
-end.
+var p: person;

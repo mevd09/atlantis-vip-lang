@@ -1,3 +1,4 @@
 interface a;
-2 ^ 3;
+var x: integer;
+x
 end. 

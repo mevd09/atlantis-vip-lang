@@ -10,7 +10,15 @@ import {
     isMemberCall,
     isUnaryExpression,
     isNamedElement,
-    isArrayType
+    isArrayType,
+    isVariable,
+    isType,
+    isRecord,
+    isUserType,
+    isView,
+    isInterface,
+    isVarsOfType,
+    Interface
 } from '../generated/ast.js';
 import {
     TypeDescription,
@@ -19,6 +27,8 @@ import {
     createBooleanTypeDescription,
     createNumberTypeDescription,
     createArrayTypeDescription,
+    createRecordTypeDescription,
+    createUserTypeDescription,
     isStringType,
     isBooleanType,
     isNumberType,
@@ -29,6 +39,8 @@ import {
     isArrayType as isArrayTypeDesc,
     isRecordType as isRecordTypeDesc,
     isUserType as isUserTypeDesc,
+    isUnknownType,
+    createUnknownTypeDescription,
 } from './descriptions.js';
 import { grammarTypeToTypeDescription } from './descriptions.js';
 
@@ -59,6 +71,15 @@ export function inferType(node: AstNode | undefined, cache: Map<AstNode, TypeDes
         // Handle array type inference
         const elementType = node.arrayType ? grammarTypeToTypeDescription(node.arrayType) : createErrorType('Missing array element type', node);
         type = createArrayTypeDescription(elementType, node.rightBound, node.leftBound);
+    } else if (isVariable(node)) {
+        // Handle variable type inference
+        type = inferVariableType(node, cache);
+    } else if (isRecord(node)) {
+        // Handle record type inference
+        type = inferRecordType(node, cache);
+    } else if (isUserType(node)) {
+        // Handle user-defined type inference
+        type = inferUserType(node, cache);
     } else if (isMemberCall(node)) {
         type = inferMemberCallType(node, cache);
     } else if (isUnaryExpression(node)) {
@@ -75,74 +96,199 @@ export function inferType(node: AstNode | undefined, cache: Map<AstNode, TypeDes
     return type;
 }
 
+function inferVariableType(node: AstNode, cache: Map<AstNode, TypeDescription>): TypeDescription {
+    if (!isVariable(node) || !node.$container) {
+        return createErrorType('Not a valid variable', node);
+    }
+
+    // VarsOfType container has a type reference
+    if (isVarsOfType(node.$container)) {
+        return grammarTypeToTypeDescription(node.$container.type);
+    }
+
+    return createErrorType('Could not determine variable type', node);
+}
+
+function inferRecordType(node: AstNode, cache: Map<AstNode, TypeDescription>): TypeDescription {
+    if (!isRecord(node)) {
+        return createErrorType('Not a valid record', node);
+    }
+
+    const fieldsMap = new Map<string, TypeDescription>();
+    
+    // Process all fields of the record
+    for (const fieldsOfType of node.fieldsOfTypes) {
+        const fieldType = grammarTypeToTypeDescription(fieldsOfType.type);
+        
+        for (const field of fieldsOfType.fields) {
+            fieldsMap.set(field.name, fieldType);
+        }
+    }
+    
+    return createRecordTypeDescription(fieldsMap);
+}
+
+function inferUserType(node: AstNode, cache: Map<AstNode, TypeDescription>): TypeDescription {
+    if (!isUserType(node)) {
+        return createErrorType('Not a valid user type', node);
+    }
+
+    const baseType = grammarTypeToTypeDescription(node.type);
+    if (isErrorType(baseType) || isUnknownType(baseType)) {
+        return createErrorType(`Invalid base type for user type '${node.name}'`, node);
+    }
+
+    return createUserTypeDescription(baseType);
+}
+
 function inferMemberCallType(node: MemberCall, cache: Map<AstNode, TypeDescription>): TypeDescription {
-    // For FeatureCall (which is inferred as MemberCall), handle the case where there's no previous
+    // Case 1: Direct reference (FeatureCall with no previous element)
     if (!node.previous) {
         if (!node.element) {
             return createErrorType('Missing element reference', node);
         }
 
+        const refText = node.element.$refText;
+        const elementRef = node.element.ref;
+
         // Handle self reference
-        if (node.element.$refText === 'self') {
-            // TODO: Implement self reference type inference
-            return createErrorType('Self reference type inference not implemented', node);
+        if (refText === 'self') {
+            return inferSelfReference(node, cache);
         }
 
-        // Handle variable and field references
-        if (isNamedElement(node.element.ref)) {
-            // TODO: Implement variable and field reference type inference
-            // This should look up the type from the scope
-            return createErrorType('Variable/field reference type inference not implemented', node);
+        // Handle named element references (variables, types, etc.)
+        if (isNamedElement(elementRef)) {
+            return inferNamedElementReference(elementRef, cache);
         }
 
-        return createErrorType('Unknown feature call', node);
+        return createErrorType(`Unknown reference '${refText}'`, node);
     }
 
+    // Case 2: Member access on another expression
     const receiverType = inferType(node.previous, cache);
-    if (isErrorType(receiverType)) return receiverType;
+    if (isErrorType(receiverType)) {
+        return receiverType; // Propagate the error
+    }
 
-    // Handle explicit operation call (function call or array indexing)
+    // Case 2a: Explicit operation call (function call or array indexing)
     if (node.explicitOperationCall) {
-        // Array indexing - when we have a call with a single numeric index argument
-        if (isArrayTypeDesc(receiverType) && node.arguments.length === 1) {
-            const indexType = inferType(node.arguments[0], cache);
-            if (isNumberType(indexType)) {
-                // Return the element type of the array
-                return receiverType.elementType;
-            }
-            return createErrorType('Array index must be a number', node);
+        return inferExplicitOperationCall(node, receiverType, cache);
+    }
+
+    // Case 2b: Property access (no explicit call)
+    if (node.element) {
+        return inferPropertyAccess(node, receiverType);
+    }
+
+    return createErrorType('Invalid member call', node);
+}
+
+/**
+ * Handles inference of self references
+ */
+function inferSelfReference(node: MemberCall, cache: Map<AstNode, TypeDescription>): TypeDescription {
+    // Find the containing view or interface
+    let container: AstNode | undefined = node;
+    while (container && !isView(container) && !isInterface(container)) {
+        container = container.$container;
+    }
+    
+    if (isView(container)) {
+        return inferViewType(container, cache);
+    } else if (isInterface(container)) {
+        return inferInterfaceType(container, cache);
+    }
+    
+    return createErrorType('Self reference outside of view or interface', node);
+}
+
+/**
+ * Handles inference of named element references
+ */
+function inferNamedElementReference(element: AstNode, cache: Map<AstNode, TypeDescription>): TypeDescription {
+    if (isVariable(element)) {
+        return inferVariableType(element, cache);
+    } else if (isType(element)) {
+        if (isRecord(element)) {
+            return inferRecordType(element, cache);
+        } else if (isUserType(element)) {
+            return inferUserType(element, cache);
+        }
+    }
+    
+    // For other named elements, infer their type directly
+    return inferType(element, cache);
+}
+
+/**
+ * Handles inference for explicit operation calls like function calls or array indexing
+ */
+function inferExplicitOperationCall(
+    node: MemberCall, 
+    receiverType: TypeDescription, 
+    cache: Map<AstNode, TypeDescription>
+): TypeDescription {
+    // Array indexing - when we have a call with a single numeric index argument
+    if (isArrayTypeDesc(receiverType) && node.arguments.length === 1) {
+        const indexType = inferType(node.arguments[0], cache);
+        if (isNumberType(indexType)) {
+            return receiverType.elementType;
+        }
+        return createErrorType('Array index must be a number', node);
+    }
+    
+    // Function calls would be handled here in a more complete implementation
+    return createErrorType('Function call type inference not implemented', node);
+}
+
+/**
+ * Handles inference for property access on different types
+ */
+function inferPropertyAccess(node: MemberCall, receiverType: TypeDescription): TypeDescription {
+    const propertyName = node.element?.$refText;
+    if (!propertyName) {
+        return createErrorType('Missing property name', node);
+    }
+
+    // Array properties
+    if (isArrayTypeDesc(receiverType)) {
+        if (propertyName === 'length') {
+            return createNumberTypeDescription();
+        }
+        return createErrorType(`Property '${propertyName}' not found on array type`, node);
+    }
+
+    // Record field access
+    if (isRecordTypeDesc(receiverType)) {
+        const fieldType = receiverType.fields.get(propertyName);
+        return fieldType || createErrorType(`Field '${propertyName}' not found in record`, node);
+    }
+
+    // User type field access - delegate to the base type
+    if (isUserTypeDesc(receiverType)) {
+        const baseType = receiverType.baseType;
+        
+        if (isRecordTypeDesc(baseType)) {
+            const fieldType = baseType.fields.get(propertyName);
+            return fieldType || createErrorType(`Field '${propertyName}' not found in user type`, node);
         }
         
-        // Function call handling would go here
-        return createErrorType('Function call type inference not implemented', node);
+        return createErrorType('User type does not support member access for non-record base types', node);
     }
 
-    // Handle property access (no explicit call)
-    if (node.element) {
-        // Array properties
-        if (isArrayTypeDesc(receiverType)) {
-            if (node.element.$refText === 'length') {
-                return createNumberTypeDescription();
-            }
-            return createErrorType(`Property '${node.element.$refText}' not found on array type`, node);
-        }
+    return createErrorType(`Type '${receiverType.$type}' does not support property access`, node);
+}
 
-        // Handle record field access
-        if (isRecordTypeDesc(receiverType)) {
-            const fieldName = node.element.$refText;
-            if (!fieldName) return createErrorType('Missing field name', node);
-            const fieldType = receiverType.fields.get(fieldName);
-            return fieldType || createErrorType(`Field '${fieldName}' not found in record`, node);
-        }
+function inferViewType(node: AstNode, cache: Map<AstNode, TypeDescription>): TypeDescription {
+    // In a more complete implementation, this would construct a record-like type
+    // with all the fields from the view
+    return createUnknownTypeDescription();
+}
 
-        // Handle user type member access
-        if (isUserTypeDesc(receiverType)) {
-            // TODO: Implement user type member access
-            return createErrorType('User type member access not implemented', node);
-        }
-    }
-
-    return createErrorType('Member access not supported for this type', node);
+function inferInterfaceType(node: Interface, cache: Map<AstNode, TypeDescription>): TypeDescription {
+    // In a more complete implementation, this would construct a record-like type 
+    // with all the fields and properties of the interface
+    return createUnknownTypeDescription();
 }
 
 function inferUnaryExpressionType(node: UnaryExpression, cache: Map<AstNode, TypeDescription>): TypeDescription {
@@ -212,42 +358,45 @@ function inferBinaryExpressionType(node: BinaryExpression, cache: Map<AstNode, T
  */
 export function isAssignable(typeA: TypeDescription, typeB: TypeDescription): boolean {
     if (isErrorType(typeA) || isErrorType(typeB)) return true;
-    if (typeA.$type === typeB.$type) return true;
+    if (typeA.$type === typeB.$type) {
+        // For array types, we need to check element type compatibility
+        if (isArrayTypeDesc(typeA) && isArrayTypeDesc(typeB)) {
+            return isAssignable(typeA.elementType, typeB.elementType);
+        }
+        
+        // For user-defined types, we need to check base type compatibility
+        if (isUserTypeDesc(typeA) && isUserTypeDesc(typeB)) {
+            return isAssignable(typeA.baseType, typeB.baseType);
+        }
+        
+        // For record types, we need to check field compatibility
+        if (isRecordTypeDesc(typeA) && isRecordTypeDesc(typeB)) {
+            // Record types are compatible if they have the same structure, no need to check names
+            for (const [fieldName, fieldType] of typeA.fields) {
+                const otherFieldType = typeB.fields.get(fieldName);
+                if (!otherFieldType || !isAssignable(fieldType, otherFieldType)) {
+                    return false;
+                }
+            }
+            return true;
+        }
+        
+        // For other types, same type means they are compatible
+        return true;
+    }
     
     // Numeric type compatibility
     if (isNumberType(typeA) && isNumberType(typeB)) return true;
     
-    // String type compatibility
+    // String type compatibility - only allow string to string assignment
     if (isStringType(typeA)) {
-        return isStringType(typeB) || isNumberType(typeB) || isBooleanType(typeB);
+        return isStringType(typeB);
     }
     
     // Date/Time type compatibility
     if (isDateType(typeA) && isDateType(typeB)) return true;
     if (isTimeType(typeA) && isTimeType(typeB)) return true;
     if (isDateTimeType(typeA) && isDateTimeType(typeB)) return true;
-    
-    // Array type compatibility
-    if (isArrayTypeDesc(typeA) && isArrayTypeDesc(typeB)) {
-        return isAssignable(typeA.elementType, typeB.elementType);
-    }
-    
-    // Record type compatibility
-    if (isRecordTypeDesc(typeA) && isRecordTypeDesc(typeB)) {
-        // Record types are compatible if they have the same structure, no need to check names
-        for (const [fieldName, fieldType] of typeA.fields) {
-            const otherFieldType = typeB.fields.get(fieldName);
-            if (!otherFieldType || !isAssignable(fieldType, otherFieldType)) {
-                return false;
-            }
-        }
-        return true;
-    }
-    
-    // User type compatibility
-    if (isUserTypeDesc(typeA) && isUserTypeDesc(typeB)) {
-        return typeA.baseType.$type === typeB.baseType.$type;
-    }
     
     return false;
 } 

@@ -1,0 +1,5 @@
+interface a;
+type IntegerAlias = integer;
+var x: IntegerAlias;
+x
+end. 

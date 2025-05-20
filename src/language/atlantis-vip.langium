@@ -107,7 +107,7 @@ Type:
 
 Record:
     'type' name=ID '=' 'record' 
-    fieldsOfTypes+=RecordFieldsOfType (',' fieldsOfTypes+=RecordFieldsOfType)* 'end'';';
+    fieldsOfTypes+=RecordFieldsOfType ';' (fieldsOfTypes+=RecordFieldsOfType ';')* 'end'';';
 
 RecordFieldsOfType:
     fields+=RecordField (',' fields+=RecordField)* ':' type=TypeReference;
